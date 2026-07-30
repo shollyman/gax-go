@@ -92,9 +92,8 @@ type stateProcessor interface {
 type stateID string
 
 // This sentinel value signals "no state change" for methods that return next state.
-var noStateChange = stateID("")
 var (
-	stateUnknown = stateID("UNKNOWN")
+	noStateChange = stateID("")
 )
 
 // Container for all state processors.
