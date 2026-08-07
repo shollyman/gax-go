@@ -14,15 +14,21 @@
 
 // Package upload provides common functionality related to resumable media uploads
 // over HTTP.
+//
+// It is EXPERIMENTAL and subject to change or removal without notice.
 package upload
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
+
+	"github.com/googleapis/gax-go/v2"
 )
 
 const (
-	// Request and response headers used to manage a resumable upload.
+	// Request and response headers used to communicate information related to a resumable upload.
 	hdrProtocol     = "X-Goog-Upload-Protocol"
 	hdrUploadURL    = "X-Goog-Upload-URL"
 	hdrStatus       = "X-Goog-Upload-Status"
@@ -42,7 +48,6 @@ var (
 	cmdQuery    uploadCommand = "query"
 )
 
-// Typed string corresponding to X-Goog-Upload-Protocol values
 type uploadProtocol string
 
 var (
@@ -51,74 +56,140 @@ var (
 
 // Uploader is responsible for handling a specific upload.
 type Uploader struct {
-	// Uploader derives its own context.
-	ctx      context.Context
-	cancelFn context.CancelFunc
 
-	// mutex guards changes to config or state.
-	mu sync.RWMutex
+	// current state handler.
+	curHandler stateHandler
+
+	// mutex guards changes to config and state.
+	mu sync.Mutex
 
 	// TODO: config fields
 
 	// TODO: runtime fields
 
-	// current state processor for the uploader.
-	processor stateProcessor
 }
 
-// UploaderOption is an option type used to configure an uploader
-// as part of the NewUploader function.
+// UploaderOption is an option pattern used to configure an Uploader.
+// It's main usage is for controlling the instantiation of NewUploader.
 type UploaderOption func(up *Uploader)
 
 func NewUploader(ctx context.Context, opts ...UploaderOption) (*Uploader, error) {
 	up := new(Uploader)
-	// Create a cancellable context.
-	up.ctx, up.cancelFn = context.WithCancel(ctx)
+	// ensure we start with an initial state, though option processing and validation
+	// can cause transition.
+	up.transitionState(defaultState)
 	for _, opt := range opts {
 		opt(up)
 	}
-	// TODO: handle basic uploader validation before returning it.
-	// TODO: choose an appropriate start state based on provided config.
+	err := up.validate(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return up, nil
 }
 
-// stateProcessor is the basic state processing interface all processors must satisfy.
-type stateProcessor interface {
-	// state returns the current state processor's ID.
-	state() stateID
+// handler validation and any setup of the uploader once options have
+// been applied.
+func (up *Uploader) validate(ctx context.Context) error {
+	// TODO
+	if up.curHandler == nil {
+
+	}
+	return errors.New("validation unimplemented")
 }
 
-// stateID is the unique ID for a specific state.
+// stateID is the typed identifier used to uniquely identify and lookup a state processor.
 type stateID string
 
 // This sentinel value signals "no state change" for methods that return next state.
-var (
-	noStateChange = stateID("")
-)
+var noStateChange = stateID("")
 
-// Container for all state processors.
-// Used to lookup state processors during state transitions.
-var stateList = []stateProcessor{
-	new(unknownState),
+// Out default initial state to start an uploader.
+var defaultState = stateID("START")
+
+// stateHandler is the basic state processing interface all processors must satisfy.
+// We use the empty interface for the time being, but can become more restrictive if needed.
+type stateHandler interface {
 }
 
-// getStateProcessor gets a state processor based on the state ID requested.
-func getStateProcessor(stateID stateID) stateProcessor {
-	for _, v := range stateList {
-		if v.state() == stateID {
-			return v
-		}
+// stateRegistry is used to resolve states by ID.
+// All states in the registry must have a unique state ID.
+var stateRegistry = map[stateID]stateHandler{
+	"START":    new(startState),
+	"TRANSMIT": new(transmitState),
+	"TERMINAL": new(terminalState),
+}
+
+// transitionState updates the state handler of the uploader.
+// If the noStateChange sentinel is passed, it does nothing.
+// If an unknown state is passed, it panics.
+func (up *Uploader) transitionState(nextState stateID) {
+	if nextState == noStateChange {
+		return
 	}
-	// When we encounted an unregistered state ID, return the catch-all unknown
-	// state processor, which satisfies none of the expected interfaces.
-	return new(unknownState)
+	if s, ok := stateRegistry[nextState]; ok {
+		up.curHandler = s
+	}
+	panic(fmt.Sprintf("no such requested state %q", nextState))
 }
 
-// unknownState is a placeholder state that contains no implementation and is
-// used to satisfy invalid state transition requests.
-type unknownState struct {
+// starter satisfies dispatched Start() requests.
+type starter interface {
+	// start sets up a new upload session,
+	// and returns the next state or an error.
+	start(ctx context.Context, up *Uploader, opts ...gax.CallOption) (err error, nextState stateID)
 }
 
-func (us *unknownState) state() stateID {
-	return "UNKNOWN"
+// Start is responsible for initializing a new upload session.
+// Generally, this should only be called once to establish the initial upload session.
+func (up *Uploader) Start(ctx context.Context, callOpts ...gax.CallOption) error {
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	if hdl, ok := up.curHandler.(starter); ok {
+		err, nextState := hdl.start(ctx, up, callOpts...)
+		up.transitionState(nextState)
+		return err
+	}
+	return up.stateError()
+}
+
+// transmitter satisfies dispatched Write() requests.
+type transmitter interface {
+	// wraps the io.Writer contract
+	write(ctx context.Context, up *Uploader, b []byte, callOpts ...gax.CallOption) (n int, err error, nextState stateID)
+}
+
+// Write transmits bytess as part of an upload.
+func (up *Uploader) Write(ctx context.Context, b []byte, callOpts ...gax.CallOption) (n int, err error) {
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	if hdl, ok := up.curHandler.(transmitter); ok {
+		n, err, nextState := hdl.write(ctx, up, b, callOpts...)
+		up.transitionState(nextState)
+		return n, err
+	}
+	return 0, up.stateError()
+}
+
+// finalizer satisfies dispatched Finalize() requests.
+type finalizer interface {
+	finalize(ctx context.Context, up *Uploader) (err error, nextState stateID)
+}
+
+// Finalize marks an upload as completed.
+func (up *Uploader) Finalize(ctx context.Context, callOpts ...gax.CallOption) (err error) {
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	if hdl, ok := up.curHandler.(finalizer); ok {
+		err, nextState := hdl.finalize(ctx, up)
+		up.transitionState(nextState)
+		return err
+	}
+	return up.stateError()
+}
+
+// stateError provides a common error when a state machine doesn't support the dispatched method.
+// TODO: report current state.
+func (up *Uploader) stateError() error {
+	return fmt.Errorf("Operation not supported in current state.")
 }

@@ -14,14 +14,13 @@
 
 package upload
 
-import "testing"
+// startState is the default initial state, corresponding to an uploader being configured but no
+// setup RPCs for an upload being sent.
+type startState struct{}
 
-func TestInvalidStatePanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("did not panic")
-		}
-	}()
-	up := new(Uploader)
-	up.transitionState(stateID("boom"))
-}
+// transmitState corresponds to an upload that has been configured and started, and able to send data.
+type transmitState struct{}
+
+// terminalState is the final terminal state.  It doesn't implement
+// any dispatched methods, as the upload has concluded.
+type terminalState struct{}
