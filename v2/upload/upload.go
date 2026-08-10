@@ -51,10 +51,10 @@ var (
 type uploadProtocol string
 
 var (
-	ResumableProtocol uploadProtocol = "resumable"
+	resumableProtocol uploadProtocol = "resumable"
 )
 
-// Uploader is responsible for handling a specific upload.
+// Uploader is responsible for handling a specific upload session.
 type Uploader struct {
 
 	// current state handler.
@@ -73,6 +73,8 @@ type Uploader struct {
 // It's main usage is for controlling the instantiation of NewUploader.
 type UploaderOption func(up *Uploader)
 
+// NewUploader is used to instantiate a new Uploader, which supports uploading media
+// to service endpoints that support the operation.
 func NewUploader(ctx context.Context, opts ...UploaderOption) (*Uploader, error) {
 	up := new(Uploader)
 	// ensure we start with an initial state, though option processing and validation
@@ -191,5 +193,5 @@ func (up *Uploader) Finalize(ctx context.Context, callOpts ...gax.CallOption) (e
 // stateError provides a common error when a state machine doesn't support the dispatched method.
 // TODO: report current state.
 func (up *Uploader) stateError() error {
-	return fmt.Errorf("Operation not supported in current state.")
+	return fmt.Errorf("operation not supported in current state.")
 }
