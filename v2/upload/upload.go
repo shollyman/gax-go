@@ -193,5 +193,5 @@ func (up *Uploader) Finalize(ctx context.Context, callOpts ...gax.CallOption) (e
 // stateError provides a common error when a state machine doesn't support the dispatched method.
 // TODO: report current state.
 func (up *Uploader) stateError() error {
-	return fmt.Errorf("operation not supported in current state.")
+	return fmt.Errorf("operation not supported in current state")
 }
