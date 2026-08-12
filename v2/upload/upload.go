@@ -190,6 +190,19 @@ func (up *Uploader) Finalize(ctx context.Context, callOpts ...gax.CallOption) (e
 	return up.stateError()
 }
 
+// Status provides information about the current upload.
+// It provides information about the local upload state as well as remote state of the upload, if available.
+type Status struct{}
+
+func (up *Uploader) Status(ctx context.Context) (*Status, error) {
+	return nil, errors.New("unimplmented")
+}
+
+// Close closes the underlying client being used to manage the upload.
+func (up *Uploader) Close() error {
+	return errors.New("unimplemented")
+}
+
 // stateError provides a common error when a state machine doesn't support the dispatched method.
 // TODO: report current state.
 func (up *Uploader) stateError() error {
