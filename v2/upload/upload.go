@@ -194,6 +194,7 @@ func (up *Uploader) Finalize(ctx context.Context, callOpts ...gax.CallOption) (e
 // It provides information about the local upload state as well as remote state of the upload, if available.
 type Status struct{}
 
+// Status returns information about the current upload.
 func (up *Uploader) Status(ctx context.Context) (*Status, error) {
 	return nil, errors.New("unimplmented")
 }
