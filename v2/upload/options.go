@@ -16,6 +16,8 @@ package upload
 
 import (
 	"net/http"
+
+	"google.golang.org/protobuf/proto"
 )
 
 // WithHTTPClient sets the HTTP client used for upload requests.
@@ -29,6 +31,13 @@ func WithHTTPClient(c *http.Client) UploaderOption {
 func WithRequestURL(url string) UploaderOption {
 	return func(up *Uploader) {
 		up.startURL = url
+	}
+}
+
+// WithRequest sets the initial request message.
+func WithRequest(msg proto.Message) UploaderOption {
+	return func(up *Uploader) {
+		up.startReq = msg
 	}
 }
 

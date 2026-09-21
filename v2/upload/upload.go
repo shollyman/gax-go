@@ -96,7 +96,7 @@ func NewUploader(ctx context.Context, opts ...UploaderOption) (*Uploader, error)
 	up := new(Uploader)
 	// ensure we start with an initial state, though option processing and validation
 	// can cause transition.
-	up.transitionState(defaultState)
+	up.transitionState(startStateID)
 	for _, opt := range opts {
 		opt(up)
 	}
@@ -112,9 +112,15 @@ func NewUploader(ctx context.Context, opts ...UploaderOption) (*Uploader, error)
 func (up *Uploader) validate(ctx context.Context) error {
 	// TODO
 	if up.curHandler == nil {
-
+		return errors.New("no current handler")
 	}
-	return errors.New("validation unimplemented")
+	if up.clientChunkSize < 0 {
+		return errors.New("negative chunk size specified")
+	}
+	if up.hc == nil {
+		return errors.New("no http client supplied")
+	}
+	return nil
 }
 
 // stateID is the typed identifier used to uniquely identify and lookup a state processor.
@@ -152,6 +158,7 @@ func (up *Uploader) transitionState(nextState stateID) {
 	}
 	if s, ok := stateRegistry[nextState]; ok {
 		up.curHandler = s
+		return
 	}
 	panic(fmt.Sprintf("no such requested state %q", nextState))
 }
