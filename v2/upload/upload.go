@@ -22,9 +22,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 
 	"github.com/googleapis/gax-go/v2"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -35,6 +37,8 @@ const (
 	hdrCommand      = "X-Goog-Upload-Command"
 	hdrOffset       = "X-Goog-Upload-Offset"
 	hdrSizeReceived = "X-Goog-Upload-Size-Received"
+	hdrContentType  = "Content-Type"
+	jsonContentType = "application/json"
 )
 
 // Typed string corresponding to X-Goog-Upload-Command directives.
@@ -46,6 +50,13 @@ var (
 	cmdUpload   uploadCommand = "upload"
 	cmdFinalize uploadCommand = "finalize"
 	cmdQuery    uploadCommand = "query"
+)
+
+type uploadStatus string
+
+var (
+	statusActive uploadStatus = "active"
+	statusFinal  uploadStatus = "final"
 )
 
 type uploadProtocol string
@@ -64,6 +75,12 @@ type Uploader struct {
 	mu sync.Mutex
 
 	// TODO: config fields
+	hc        *http.Client
+	startReq  proto.Message
+	startURL  string
+	uploadURL string
+
+	clientChunkSize int64
 
 	// TODO: runtime fields
 
@@ -103,23 +120,27 @@ func (up *Uploader) validate(ctx context.Context) error {
 // stateID is the typed identifier used to uniquely identify and lookup a state processor.
 type stateID string
 
-// This sentinel value signals "no state change" for methods that return next state.
-var noStateChange = stateID("")
-
-// Out default initial state to start an uploader.
-var defaultState = stateID("START")
-
 // stateHandler is the basic state processing interface all processors must satisfy.
 // We use the empty interface for the time being, but can become more restrictive if needed.
 type stateHandler interface {
 }
 
+// well known state IDs
+var (
+	// This sentinel value signals "no state change" for methods that return next state.
+	noStateChange = stateID("")
+
+	startStateID    = stateID("START")
+	transmitStateID = stateID("TRANSMIT")
+	terminalStateID = stateID("TERMINAL")
+)
+
 // stateRegistry is used to resolve states by ID.
 // All states in the registry must have a unique state ID.
 var stateRegistry = map[stateID]stateHandler{
-	"START":    new(startState),
-	"TRANSMIT": new(transmitState),
-	"TERMINAL": new(terminalState),
+	startStateID:    new(startState),
+	transmitStateID: new(transmitState),
+	terminalStateID: new(terminalState),
 }
 
 // transitionState updates the state handler of the uploader.
