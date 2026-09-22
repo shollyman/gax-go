@@ -72,12 +72,29 @@ func (ss *startState) start(ctx context.Context, up *Uploader, opts ...gax.CallO
 	}
 
 	// Record the upload URL, indicate we're ready to transition to transmitting.
-	up.uploadURL = up.uploadURL
+	up.uploadURL = upload
 	return nil, transmitStateID
 }
 
 // transmitState corresponds to an upload that has been configured and started, and able to send data.
 type transmitState struct{}
+
+// write a block of data
+func (ts *transmitState) write(ctx context.Context, up *Uploader, b []byte, callOpts ...gax.CallOption) (n int, err error, nextState stateID) {
+	return -1, errors.New("unimplemented"), terminalStateID
+}
+
+func (ts *transmitState) query(ctx context.Context, up *Uploader, callOpts ...gax.CallOption) (status *remoteStatus, err error, nextState stateID) {
+	return nil, errors.New("unimplemented"), terminalStateID
+}
+
+func (ts *transmitState) finalize(ctx context.Context, up *Uploader) (err error, nextState stateID) {
+	return errors.New("unimplemented"), terminalStateID
+}
+
+func (ts *transmitState) cancel(ctx context.Context, up *Uploader) (err error, nextState stateID) {
+	return errors.New("unimplemented"), terminalStateID
+}
 
 // terminalState is the final terminal state.  It doesn't implement
 // any dispatched methods, as the upload has concluded.

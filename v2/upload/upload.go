@@ -201,6 +201,18 @@ func (up *Uploader) Write(ctx context.Context, b []byte, callOpts ...gax.CallOpt
 	return 0, up.stateError()
 }
 
+// remote information about an upload.
+type remoteStatus struct {
+	status       string
+	sizeReceived int64
+}
+
+// queryer is used to get remote information about an upload.
+type queryer interface {
+	// fetch remote state of an upload.
+	query(ctx context.Context, up *Uploader, callOpts ...gax.CallOption) (status *remoteStatus, err error, nextState stateID)
+}
+
 // finalizer satisfies dispatched Finalize() requests.
 type finalizer interface {
 	finalize(ctx context.Context, up *Uploader) (err error, nextState stateID)
@@ -212,6 +224,23 @@ func (up *Uploader) Finalize(ctx context.Context, callOpts ...gax.CallOption) (e
 	defer up.mu.Unlock()
 	if hdl, ok := up.curHandler.(finalizer); ok {
 		err, nextState := hdl.finalize(ctx, up)
+		up.transitionState(nextState)
+		return err
+	}
+	return up.stateError()
+}
+
+// canceller is used to explicit cancel an in progress upload.
+type canceller interface {
+	cancel(ctx context.Context, up *Uploader) (err error, nextState stateID)
+}
+
+// Cancel abandons an in progress upload.
+func (up *Uploader) Cancel(ctx context.Context, callOpts ...gax.CallOption) (err error) {
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	if hdl, ok := up.curHandler.(canceller); ok {
+		err, nextState := hdl.cancel(ctx, up)
 		up.transitionState(nextState)
 		return err
 	}

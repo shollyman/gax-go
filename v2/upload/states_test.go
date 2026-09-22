@@ -15,7 +15,6 @@
 package upload
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,17 +24,22 @@ import (
 
 func TestStartState_start(t *testing.T) {
 
+	// Create a test server and handler that satisfies validates basic request validation
+	// and provides a proper start response.
 	serv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		b, err := io.ReadAll(req.Body)
-		if err != nil {
-			t.Fatalf("handler failure: %v", err)
+		if meth := req.Method; meth != http.MethodPost {
+			t.Errorf("expected POST, got %q", meth)
 		}
-		t.Logf("req: %q", string(b))
-		for k, v := range req.Header {
-			t.Logf("header %q: %v", k, v)
+		if cmd := req.Header.Get(hdrCommand); cmd != string(cmdStart) {
+			t.Errorf("expected header %q to be start, got %q", hdrCommand, cmd)
 		}
-		w.WriteHeader(http.StatusOK)
+		if prot := req.Header.Get(hdrProtocol); prot != string(resumableProtocol) {
+			t.Errorf("expected header %q to be resumable, got %q", hdrProtocol, prot)
+		}
 		w.Header().Add(hdrStatus, string(statusActive))
+		w.Header().Add(hdrUploadURL, "http://foo/1234")
+		w.WriteHeader(http.StatusOK)
+
 	}))
 	defer serv.Close()
 
@@ -50,6 +54,10 @@ func TestStartState_start(t *testing.T) {
 
 	ss := &startState{}
 	err, next := ss.start(t.Context(), up)
-	t.Errorf("got err: %v", err)
-	t.Errorf("got next: %q", next)
+	if err != nil {
+		t.Errorf("start() error: %v", err)
+	}
+	if next != transmitStateID {
+		t.Errorf("start() got next state %q, want %q", next, transmitStateID)
+	}
 }
